@@ -72,3 +72,71 @@ if selected_option == "Normal Chat":
             llm = ChatOllama(model=ollama_model, streaming=True, callbacks=[stream_handler])
             response = llm(st.session_state.normal_chat_messages)
             st.session_state.normal_chat_messages.append(AIMessage(content=response.content))
+
+elif selected_option == "Chat with PDF":
+    if "assistant" not in st.session_state:
+        st.session_state["assistant"] = None
+
+    if "pdf_chat_messages" not in st.session_state:
+        st.session_state["pdf_chat_messages"] = []  # Initialize session state key
+
+    def read_and_save_file():
+        st.session_state["pdf_chat_messages"] = []
+        st.session_state["user_input"] = ""
+
+        uploaded_files = st.session_state.get("file_uploader", [])
+
+        for file in uploaded_files:
+            with tempfile.NamedTemporaryFile(delete=False) as tf:
+                tf.write(file.getbuffer())
+                file_path = tf.name
+
+            with st.spinner(f"Ingesting {file.name}"):
+                if st.session_state["assistant"] is not None:
+                    st.session_state["assistant"].clear()
+                    st.session_state["assistant"].ingest(file_path)
+            os.remove(file_path)
+
+    def display_messages():
+        st.subheader("Chat")
+        for i, msg in enumerate(st.session_state["pdf_chat_messages"]):
+            if isinstance(msg, AIMessage):
+                st.chat_message("assistant").write(msg.content)
+            elif isinstance(msg, HumanMessage):
+                st.chat_message("user").write(msg.content)
+
+    def process_input():
+        if st.session_state["user_input"] and len(st.session_state["user_input"].strip()) > 0:
+            user_text = st.session_state["user_input"].strip()
+
+            if st.session_state["assistant"] is not None:
+                with st.spinner(f"Thinking"):
+                    agent_text = st.session_state["assistant"].ask(user_text)
+
+                st.session_state["pdf_chat_messages"].append((user_text, True))
+                st.session_state["pdf_chat_messages"].append((agent_text, False))
+
+    def page():
+        if len(st.session_state) == 0:
+            st.session_state["pdf_chat_messages"] = []
+            st.session_state["assistant"] = ChatPDF()
+
+        st.header("ChatPDF")
+
+        st.subheader("Upload a document")
+        st.file_uploader(
+            "Upload document",
+            type=["pdf"],
+            key="file_uploader",
+            on_change=read_and_save_file,
+            label_visibility="collapsed",
+            accept_multiple_files=True,
+        )
+
+    st.session_state["ingestion_spinner"] = st.empty()
+
+    display_messages()
+    st.text_input("Message", key="user_input", on_change=process_input)
+
+    if __name__ == "__main__":
+        page()
